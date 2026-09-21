@@ -1,0 +1,43 @@
+function doPost(e) {
+  try {
+    var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+    var data = JSON.parse(e.postData.contents);
+    
+    var seat = String(data.seat || '');
+    var name = String(data.name || '');
+    var status = String(data.status || '作答中');
+    var score = String(data.score || '-');
+    var accuracy = String(data.accuracy || '-');
+    var attempts = Number(data.attemptCount || 1);
+    var timestamp = String(data.timestamp || new Date().toLocaleString());
+
+    // 檢查是否有同一個學生（比對座號與姓名）
+    var rows = sheet.getDataRange().getValues();
+    var rowIndex = -1;
+
+    for (var i = 1; i < rows.length; i++) {
+      if (String(rows[i][0]) === seat && String(rows[i][1]) === name) {
+        rowIndex = i + 1; // 找到既有學生行數
+        break;
+      }
+    }
+
+    if (rowIndex > 0) {
+      // 如果已存在：更新作答狀態、分數、重複次數與時間
+      sheet.getRange(rowIndex, 3).setValue(status);
+      sheet.getRange(rowIndex, 4).setValue(score);
+      sheet.getRange(rowIndex, 5).setValue(accuracy);
+      sheet.getRange(rowIndex, 6).setValue("第 " + attempts + " 次");
+      sheet.getRange(rowIndex, 7).setValue(timestamp);
+    } else {
+      // 若為第一次作答：新增一筆紀錄
+      sheet.appendRow([seat, name, status, score, accuracy, "第 " + attempts + " 次", timestamp]);
+    }
+
+    return ContentService.createTextOutput(JSON.stringify({ result: "success" }))
+      .setMimeType(ContentService.MimeType.JSON);
+  } catch (error) {
+    return ContentService.createTextOutput(JSON.stringify({ result: "error", message: error.toString() }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+}

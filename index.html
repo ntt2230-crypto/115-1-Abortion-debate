@@ -1,43 +1,767 @@
-function doPost(e) {
-  try {
-    var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
-    var data = JSON.parse(e.postData.contents);
-    
-    var seat = String(data.seat || '');
-    var name = String(data.name || '');
-    var status = String(data.status || '作答中');
-    var score = String(data.score || '-');
-    var accuracy = String(data.accuracy || '-');
-    var attempts = Number(data.attemptCount || 1);
-    var timestamp = String(data.timestamp || new Date().toLocaleString());
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Argument Classifier: Pro-Life or Pro-Choice?</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Noto+Sans+TC:wght@400;500;700&display=swap');
+    body {
+      font-family: 'Plus Jakarta Sans', 'Noto Sans TC', sans-serif;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    .vocab-hint {
+      color: #0284c7;
+      font-weight: 600;
+      font-size: 0.86em;
+      background-color: #f0f9ff;
+      padding: 1px 5px;
+      margin: 0 1px;
+      border-radius: 4px;
+      display: inline-block;
+      border: 1px solid #bae6fd;
+    }
+    .fade-in {
+      animation: fadeIn 0.25s ease-out forwards;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+  </style>
+</head>
+<body class="bg-slate-100 text-slate-800 min-h-screen flex flex-col items-center justify-center p-3 sm:p-6" oncontextmenu="return false;">
 
-    // 檢查是否有同一個學生（比對座號與姓名）
-    var rows = sheet.getDataRange().getValues();
-    var rowIndex = -1;
+  <!-- Main App Card -->
+  <main class="w-full max-w-2xl bg-white rounded-3xl shadow-xl border border-slate-200 overflow-hidden flex flex-col transition-all">
 
-    for (var i = 1; i < rows.length; i++) {
-      if (String(rows[i][0]) === seat && String(rows[i][1]) === name) {
-        rowIndex = i + 1; // 找到既有學生行數
-        break;
+    <!-- Top Navigation / Progress Header -->
+    <header class="bg-slate-900 text-white px-5 sm:px-6 py-4 flex items-center justify-between border-b border-slate-800">
+      <div class="flex items-center gap-2.5">
+        <div class="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center text-white font-bold text-sm shadow">
+          <i data-lucide="scale" class="w-4 h-4"></i>
+        </div>
+        <div>
+          <h1 class="font-bold text-sm sm:text-base leading-tight flex items-center gap-2">
+            Argument Classifier
+            <span id="student-display-badge" class="hidden text-xs bg-indigo-900/80 text-indigo-300 font-normal px-2 py-0.5 rounded-md border border-indigo-700"></span>
+          </h1>
+          <p class="text-[11px] text-slate-400">Pro-Life vs. Pro-Choice 深度論點分析</p>
+        </div>
+      </div>
+      
+      <!-- Right Utility Bar -->
+      <div class="flex items-center gap-2">
+        <button onclick="toggleReviewModal(true)" title="查看10大論點總複習" class="text-xs bg-slate-800 hover:bg-slate-700 border border-slate-700 px-2.5 py-1 rounded-lg text-slate-300 font-medium flex items-center gap-1 transition-all">
+          <i data-lucide="book-open" class="w-3.5 h-3.5 text-amber-400"></i>
+          <span class="hidden sm:inline">總複習</span>
+        </button>
+
+        <button onclick="openConfigModal()" title="老師設定 Google Sheet 網址" class="text-xs bg-slate-800 hover:bg-slate-700 border border-slate-700 p-1.5 rounded-lg text-slate-400 hover:text-slate-200 transition-all">
+          <i data-lucide="settings" class="w-3.5 h-3.5"></i>
+        </button>
+
+        <!-- Live Score Counter -->
+        <span id="score-tracker" class="hidden text-xs bg-slate-800 border border-slate-700 px-2.5 py-1 rounded-lg text-indigo-300 font-bold">
+          Score: 0 / 10
+        </span>
+        <span id="question-badge" class="hidden text-xs bg-indigo-600 px-3 py-1 rounded-lg font-extrabold tracking-wide">
+          1 / 10
+        </span>
+      </div>
+    </header>
+
+    <!-- Progress Bar Line -->
+    <div id="progress-container" class="w-full bg-slate-200 h-1.5 overflow-hidden hidden">
+      <div id="progress-line" class="bg-indigo-600 h-full transition-all duration-300" style="width: 10%;"></div>
+    </div>
+
+    <!-- 1. LOGIN & INTRO SCREEN -->
+    <section id="screen-intro" class="p-6 sm:p-8 flex flex-col items-center text-center fade-in">
+      <div class="w-14 h-14 rounded-2xl bg-indigo-50 border border-indigo-100 text-indigo-600 flex items-center justify-center text-3xl mb-3 shadow-xs">
+        ⚖️
+      </div>
+      <h2 class="text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight">
+        Debate Arguments Mastery
+      </h2>
+      <p class="text-xs sm:text-sm text-slate-600 mt-1 max-w-md leading-relaxed">
+        閱讀 10 個英文爭議核心論點，準確判斷屬於 <strong>Pro-Choice</strong> 還是 <strong>Pro-Life</strong> 立場。
+      </p>
+
+      <!-- Student Credentials Form -->
+      <div class="bg-slate-50 border-2 border-slate-200 rounded-2xl p-5 my-5 text-left w-full max-w-md shadow-xs">
+        <h3 class="text-xs font-extrabold uppercase tracking-wider text-slate-700 mb-3 flex items-center gap-1.5">
+          <i data-lucide="user-check" class="w-4 h-4 text-indigo-600"></i>
+          請填寫學生資訊 (Student Information)
+        </h3>
+        
+        <div class="grid grid-cols-2 gap-3 mb-3">
+          <div>
+            <label class="block text-[11px] font-bold text-slate-600 mb-1" for="input-seat">
+              座號 / 學號 (Seat No.) *
+            </label>
+            <input id="input-seat" type="text" placeholder="例如: 08" 
+              class="w-full px-3 py-2 text-sm bg-white border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 font-semibold" required>
+          </div>
+          <div>
+            <label class="block text-[11px] font-bold text-slate-600 mb-1" for="input-name">
+              姓名 (Student Name) *
+            </label>
+            <input id="input-name" type="text" placeholder="例如: 陳大明" 
+              class="w-full px-3 py-2 text-sm bg-white border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 font-semibold" required>
+          </div>
+        </div>
+
+        <div id="login-error-msg" class="hidden text-rose-600 text-xs font-bold mb-2 flex items-center gap-1">
+          <i data-lucide="alert-circle" class="w-3.5 h-3.5"></i>
+          請務必填寫座號與姓名！
+        </div>
+
+        <div class="text-[11px] text-slate-500 bg-white p-2.5 rounded-lg border border-slate-200 leading-relaxed">
+          💡 <strong>作答須知：</strong>
+          <ul class="list-disc list-inside mt-1 space-y-0.5">
+            <li>難字皆已標註繁體中文翻譯，請安心閱讀。</li>
+            <li>答錯會提供提示並給予<strong>第二次機會作答</strong>。</li>
+            <li>已停用右鍵翻譯功能，請專注練習閱讀理解。</li>
+            <li>點擊開始後，後台將自動記錄作答進度與成績。</li>
+          </ul>
+        </div>
+      </div>
+
+      <button onclick="startQuiz()" class="w-full max-w-md px-8 py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-sm shadow-md transition-all flex items-center justify-center gap-2 active:scale-95">
+        <span>開始挑戰 (隨機 10 題)</span>
+        <i data-lucide="arrow-right" class="w-4 h-4"></i>
+      </button>
+
+      <!-- Sync Status Indicator -->
+      <p id="cloud-status-text" class="text-[11px] text-slate-400 mt-3 flex items-center gap-1">
+        <i data-lucide="cloud" class="w-3 h-3 text-slate-400"></i>
+        <span>Google Sheets 雲端即時連線中 (若未設定則在本地端執行)</span>
+      </p>
+    </section>
+
+    <!-- 2. QUIZ SCREEN -->
+    <section id="screen-quiz" class="hidden p-5 sm:p-7 flex flex-col gap-4 fade-in">
+      
+      <!-- Argument Presentation Card -->
+      <div class="bg-slate-50 border-2 border-slate-200 rounded-2xl p-5 sm:p-6 shadow-2xs flex flex-col justify-between min-h-[170px]">
+        <div>
+          <div class="flex items-center justify-between mb-3 text-xs text-slate-400 font-semibold uppercase tracking-wider">
+            <span class="flex items-center gap-1">
+              <i data-lucide="quote" class="w-3.5 h-3.5 text-indigo-500"></i>
+              Debate Statement
+            </span>
+            <span id="topic-tag" class="bg-slate-200 text-slate-700 px-2 py-0.5 rounded text-[11px] font-bold">Theme</span>
+          </div>
+          <p id="argument-text" class="text-slate-900 text-sm sm:text-base leading-relaxed font-medium">
+            <!-- Dynamically populated argument with inline annotations -->
+          </p>
+        </div>
+      </div>
+
+      <!-- Binary Choice Buttons -->
+      <div class="grid grid-cols-2 gap-3 pt-1" id="choice-buttons-box">
+        <button id="btn-choice" onclick="handleSelect('choice')" class="p-4 rounded-2xl border-2 border-sky-300 bg-sky-50/70 hover:bg-sky-100 hover:border-sky-500 text-sky-900 font-extrabold text-sm sm:text-base flex flex-col items-center justify-center gap-1 transition-all shadow-2xs active:scale-95">
+          <span class="text-2xl">🕊️</span>
+          <span>Pro-Choice</span>
+          <span class="text-[11px] font-medium text-sky-700">(支持女性選擇權)</span>
+        </button>
+
+        <button id="btn-life" onclick="handleSelect('life')" class="p-4 rounded-2xl border-2 border-rose-300 bg-rose-50/70 hover:bg-rose-100 hover:border-rose-500 text-rose-900 font-extrabold text-sm sm:text-base flex flex-col items-center justify-center gap-1 transition-all shadow-2xs active:scale-95">
+          <span class="text-2xl">👶</span>
+          <span>Pro-Life</span>
+          <span class="text-[11px] font-medium text-rose-700">(支持胎兒生命權)</span>
+        </button>
+      </div>
+
+      <!-- Feedback Area: Hint (First Try Wrong) OR Explanation (Correct) -->
+      <div id="feedback-box" class="hidden rounded-2xl p-4 text-xs sm:text-sm fade-in">
+        <div class="flex items-start gap-2.5">
+          <div id="feedback-icon" class="text-lg flex-shrink-0 mt-0.5">💡</div>
+          <div class="flex-1">
+            <h4 id="feedback-title" class="font-bold mb-1">Feedback Title</h4>
+            <p id="feedback-text" class="leading-relaxed text-slate-700">Detailed explanation here...</p>
+          </div>
+        </div>
+
+        <!-- Next Question Button (Only appears when answer is correct) -->
+        <div id="next-action-box" class="hidden mt-3 pt-3 border-t border-slate-200/60 flex justify-end">
+          <button onclick="nextQuestion()" class="px-5 py-2.5 bg-slate-900 hover:bg-indigo-600 text-white font-bold rounded-xl text-xs sm:text-sm transition-all flex items-center gap-1.5 shadow-xs">
+            <span>Next Argument</span>
+            <i data-lucide="chevron-right" class="w-4 h-4"></i>
+          </button>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- 3. COMPLETION SCREEN & REVIEW -->
+    <section id="screen-completed" class="hidden p-6 sm:p-8 flex flex-col items-center text-center fade-in">
+      <div class="w-16 h-16 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center text-3xl mb-3 shadow-inner">
+        🎯
+      </div>
+      <h2 class="text-2xl font-extrabold text-slate-900">
+        Challenge Completed!
+      </h2>
+      <p id="completion-greeting" class="text-xs sm:text-sm text-slate-600 mt-1 max-w-sm">
+        恭喜完成 10 個核心辯論論點辨識！
+      </p>
+
+      <!-- Score Card -->
+      <div class="w-full max-w-md bg-slate-50 border border-slate-200 rounded-2xl p-4 my-4 text-left text-xs space-y-2.5">
+        <div class="flex justify-between items-center border-b border-slate-200 pb-2">
+          <span class="text-slate-500 font-semibold">學生姓名 (Student):</span>
+          <span id="final-student-name" class="font-bold text-slate-800 text-sm">-</span>
+        </div>
+        <div class="flex justify-between items-center border-b border-slate-200 pb-2">
+          <span class="text-slate-500 font-semibold">第一次答對率 (First-Try Score):</span>
+          <span id="final-accuracy-badge" class="font-extrabold text-indigo-600 text-base">10 / 10 (100%)</span>
+        </div>
+        <div class="flex justify-between items-center border-b border-slate-200 pb-2">
+          <span class="text-slate-500 font-semibold">作答次數 (Submission Count):</span>
+          <span id="final-attempt-count" class="font-bold text-slate-700">第 1 次作答</span>
+        </div>
+        <div class="flex justify-between items-center pt-0.5">
+          <span class="text-slate-500 font-semibold">雲端後台狀態:</span>
+          <span id="final-cloud-status" class="text-emerald-700 bg-emerald-100 font-bold px-2 py-0.5 rounded text-[11px] flex items-center gap-1">
+            <i data-lucide="check" class="w-3 h-3"></i>
+            成績已自動同步至試算表
+          </span>
+        </div>
+      </div>
+
+      <!-- Action Buttons -->
+      <div class="w-full max-w-md flex flex-col sm:flex-row gap-2.5 mb-6">
+        <button onclick="toggleReviewModal(true)" class="flex-1 px-5 py-3 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-xl text-xs sm:text-sm shadow-md transition-all flex items-center justify-center gap-2">
+          <i data-lucide="book-marked" class="w-4 h-4"></i>
+          <span>查看 10 大論點總複習</span>
+        </button>
+
+        <button onclick="restartQuizWithSameUser()" class="flex-1 px-5 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs sm:text-sm shadow-md transition-all flex items-center justify-center gap-2">
+          <i data-lucide="rotate-ccw" class="w-4 h-4"></i>
+          <span>再次隨機挑戰 (重測)</span>
+        </button>
+      </div>
+
+      <button onclick="logoutUser()" class="text-xs text-slate-400 hover:text-slate-600 underline">
+        登出更換座號姓名 (Switch Student)
+      </button>
+    </section>
+
+  </main>
+
+  <!-- 4. MODAL: FULL 10-ARGUMENTS REVIEW MODAL -->
+  <div id="modal-review" class="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-3 sm:p-5 hidden">
+    <div class="bg-white w-full max-w-3xl max-h-[90vh] rounded-3xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden">
+      <!-- Modal Header -->
+      <div class="px-6 py-4 bg-slate-900 text-white flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <i data-lucide="book-open" class="w-5 h-5 text-amber-400"></i>
+          <div>
+            <h3 class="font-bold text-sm sm:text-base">10 大核心論點總複習 (Comprehensive Review)</h3>
+            <p class="text-xs text-slate-400">Pro-Life vs. Pro-Choice 雙方關鍵詞與論點對照表</p>
+          </div>
+        </div>
+        <button onclick="toggleReviewModal(false)" class="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white transition">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <!-- Modal Body (Scrollable Review Cards) -->
+      <div class="p-5 overflow-y-auto space-y-4 flex-1 text-slate-800 bg-slate-50 text-xs sm:text-sm" id="review-list-container">
+        <!-- Rendered by JavaScript -->
+      </div>
+
+      <!-- Modal Footer -->
+      <div class="px-6 py-3 bg-white border-t border-slate-200 flex justify-between items-center">
+        <span class="text-[11px] text-slate-500">可隨時按右上角 ✕ 關閉此總複習視窗</span>
+        <button onclick="toggleReviewModal(false)" class="px-5 py-2 bg-slate-900 hover:bg-indigo-600 text-white font-bold rounded-xl text-xs transition">
+          關閉 (Close)
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 5. MODAL: TEACHER GOOGLE SHEET SETUP -->
+  <div id="modal-config" class="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4 hidden">
+    <div class="bg-white w-full max-w-xl rounded-3xl shadow-2xl border border-slate-200 p-6 flex flex-col">
+      <div class="flex items-center justify-between pb-3 border-b border-slate-200 mb-4">
+        <h3 class="font-bold text-base text-slate-900 flex items-center gap-2">
+          <i data-lucide="settings" class="w-5 h-5 text-indigo-600"></i>
+          教師 Google Sheets 後台串接設定
+        </h3>
+        <button onclick="closeConfigModal()" class="p-1 text-slate-400 hover:text-slate-700">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <p class="text-xs text-slate-600 leading-relaxed mb-3">
+        只要貼上 Google Apps Script 部署的 <strong>Web App URL</strong>，學生的「座號、姓名、作答中狀態、得分、重測次數」就會自動即時寫入您的 Google 試算表！
+      </p>
+
+      <label class="block text-xs font-bold text-slate-700 mb-1" for="sheet-api-url">
+        Google Apps Script Web App URL:
+      </label>
+      <input id="sheet-api-url" type="url" placeholder="https://script.google.com/macros/s/.../exec" 
+        class="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl font-mono focus:ring-2 focus:ring-indigo-500 focus:outline-none mb-3">
+
+      <!-- Collapsible Setup Guide -->
+      <details class="bg-indigo-50 border border-indigo-100 rounded-xl p-3 text-[11px] text-indigo-950 mb-4 cursor-pointer">
+        <summary class="font-bold text-indigo-900">點我看：1分鐘快速建置 Google Sheet 試算表教學</summary>
+        <ol class="list-decimal list-inside space-y-1 mt-2 text-slate-700 leading-relaxed">
+          <li>開一個新的 Google 試算表，第一列填欄位：<strong>座號、姓名、狀態、得分、答對率、測驗次數、最後更新時間</strong>。</li>
+          <li>點上方選單「擴充功能」➔「Apps Script」。</li>
+          <li>將本頁面底部的 Google Apps Script 範例程式碼貼上並存檔。</li>
+          <li>點右上角「部署」➔「新增部署作業」➔ 類型選「網頁應用程式」。</li>
+          <li>執行身分選「我」，<strong>「誰可以存取」請務必選「所有人 (Anyone)」</strong>。</li>
+          <li>複製生成的 Web App URL 貼至上方欄位並點儲存即可！</li>
+        </ol>
+      </details>
+
+      <div class="flex justify-end gap-2">
+        <button onclick="closeConfigModal()" class="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs">
+          取消
+        </button>
+        <button onclick="saveConfigUrl()" class="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs">
+          儲存設定
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <footer class="mt-4 text-center text-xs text-slate-400">
+    Debate Reading Scaffold • CEFR B2 Level
+  </footer>
+
+  <script>
+    // -------------------------------------------------------------
+    // 10 COMPREHENSIVE ARGUMENTS WITH EXPANDED CHINESE B2 SCAFFOLDING
+    // -------------------------------------------------------------
+    const ARGUMENTS_POOL = [
+      {
+        id: 1,
+        theme: "Constitution & Viability",
+        stance: "choice", // Pro-Choice
+        text: "Under the <strong>14th Amendment <span class=\"vocab-hint\">(美國憲法第14修正案，保障公民自由與個人自主權)</span></strong>, constitutional rights apply only to people who are born. Prior to <strong>viability <span class=\"vocab-hint\">(存活力，約懷孕24週能在母體外存活)</span></strong>, a pregnant woman's fundamental right to <strong>liberty <span class=\"vocab-hint\">(人身自由權)</span></strong> and personal control over her future must take priority.",
+        hint: "Notice the emphasis on 'born persons' under the 14th Amendment and defending the woman's right to liberty before viability.",
+        explanation: "This is a core <strong>Pro-Choice</strong> argument. It asserts that legal personhood begins at birth, meaning the state cannot force pregnancy before the fetus is viable outside the womb."
+      },
+      {
+        id: 2,
+        theme: "Biological Beginning of Life",
+        stance: "life", // Pro-Life
+        text: "According to <strong>embryology <span class=\"vocab-hint\">(胚胎學)</span></strong>, biological human life begins at the very moment of <strong>fertilization <span class=\"vocab-hint\">(受精／受孕)</span></strong>. The embryo is a unique individual with complete human DNA, meaning the <strong>inherent <span class=\"vocab-hint\">(與生俱來的)</span></strong> right to life must not depend on physical size or developmental stage.",
+        hint: "Notice the focus on scientific embryology and the claim that human life and DNA exist from fertilization.",
+        explanation: "This is a primary <strong>Pro-Life</strong> argument. It argues that biologically, a distinct human life begins at conception, giving the fetus moral value regardless of size or age."
+      },
+      {
+        id: 3,
+        theme: "Bodily Autonomy & Organ Donation",
+        stance: "choice", // Pro-Choice
+        text: "The legal system never <strong>compels <span class=\"vocab-hint\">(強迫／強制)</span></strong> any citizen to donate blood or kidneys, even to save a dying relative. Forcing a woman to endure nine months of pregnancy without <strong>consent <span class=\"vocab-hint\">(知情同意)</span></strong> violates her fundamental <strong>bodily autonomy <span class=\"vocab-hint\">(身體自主控制權)</span></strong>.",
+        hint: "The speaker compares carrying a pregnancy to forced organ donation to highlight that no one can use another's body without consent.",
+        explanation: "This is a foundational <strong>Pro-Choice</strong> argument. It claims that even if a fetus is considered a person, no person has the right to use another human's internal organs without permission."
+      },
+      {
+        id: 4,
+        theme: "Parental Responsibility & Duty",
+        stance: "life", // Pro-Life
+        text: "Biological parents hold an inescapable <strong>duty of care <span class=\"vocab-hint\">(法定與道德撫養照顧義務)</span></strong> toward their children. Personal freedom does not extend to an absolute right to <strong>terminate <span class=\"vocab-hint\">(人為終止／終結)</span></strong> one's own <strong>dependent offspring <span class=\"vocab-hint\">(依賴父母撫養的後代子女)</span></strong>.",
+        hint: "Look at the emphasis on parental responsibility ('duty of care') and the rejection of a right to harm dependent offspring.",
+        explanation: "This is a cornerstone <strong>Pro-Life</strong> argument. It contends that parents bear a special moral obligation to protect and nourish the children they bring into existence."
+      },
+      {
+        id: 5,
+        theme: "Sentience & Consciousness",
+        stance: "choice", // Pro-Choice
+        text: "Early embryos lack the <strong>cortex <span class=\"vocab-hint\">(大腦皮質)</span></strong> neural connections necessary for <strong>sentience <span class=\"vocab-hint\">(感知知覺能力，如感受痛苦或情緒)</span></strong>. True moral personhood belongs to conscious minds capable of perception, rather than simply living, dividing biological cells.",
+        hint: "The speaker values consciousness and the neural ability to feel pain over basic cellular division.",
+        explanation: "This is a key <strong>Pro-Choice</strong> argument. It argues that prior to the development of brain circuitry (~24 weeks), a fetus cannot experience sensations or pain, so it does not have full moral personhood."
+      },
+      {
+        id: 6,
+        theme: "Universal Human Worth",
+        stance: "life", // Pro-Life
+        text: "Conditioning human rights on <strong>cognitive capabilities <span class=\"vocab-hint\">(認知能力，如智力或記憶力)</span></strong> or active sentience is deeply dangerous. A patient temporarily unconscious under general <strong>anesthesia <span class=\"vocab-hint\">(全身麻醉)</span></strong> also lacks awareness, yet it remains a severe crime to end their life.",
+        hint: "The argument defends the rights of vulnerable humans who temporarily or developmentally lack awareness.",
+        explanation: "This is a classic <strong>Pro-Life</strong> counter-argument. It warns that defining human value based on brain function or awareness creates dangerous inequality and discriminates against the vulnerable."
+      },
+      {
+        id: 7,
+        theme: "Sexual Assault & Secondary Trauma",
+        stance: "choice", // Pro-Choice
+        text: "Compelling a survivor of sexual assault to carry an unwanted pregnancy inflicts severe <strong>secondary trauma <span class=\"vocab-hint\">(二次創傷)</span></strong>. A survivor must possess the legal sovereignty to protect her own physical recovery and <strong>psychological wellbeing <span class=\"vocab-hint\">(心理身心健康)</span></strong>.",
+        hint: "The argument highlights healing, victim empathy, and preventing prolonged emotional and physical suffering.",
+        explanation: "This is a pivotal <strong>Pro-Choice</strong> stance on exceptions, maintaining that forcing a victim of violence to deliver her attacker's child is an inhumane violation of her mental and physical dignity."
+      },
+      {
+        id: 8,
+        theme: "Innocence of the Unborn",
+        stance: "life", // Pro-Life
+        text: "A child conceived in an act of violence is entirely <strong>innocent <span class=\"vocab-hint\">(無辜清白的)</span></strong> of the perpetrator's crimes. In a just legal system, we severely punish the offender, but we never execute an innocent unborn child for someone else's wrongdoing.",
+        hint: "Notice the moral principle that an innocent baby should not be penalized or killed for the father's evil act.",
+        explanation: "This is a consistent <strong>Pro-Life</strong> principle: because every fetus is an innocent third party, taking their life does not solve or undo the tragedy of the original crime."
+      },
+      {
+        id: 9,
+        theme: "Disability Rights & Eugenics",
+        stance: "life", // Pro-Life
+        text: "Aborting over 80% of fetuses diagnosed with Down syndrome reflects modern <strong>ableism <span class=\"vocab-hint\">(對身心障礙者的歧視與偏見)</span></strong> and subtle <strong>eugenics <span class=\"vocab-hint\">(優生學篩檢與基因篩除)</span></strong>. Society must protect individuals with genetic differences rather than selectively eliminating them before birth.",
+        hint: "The speaker advocates for disability rights and warns against using selective abortion to eliminate disabled people.",
+        explanation: "This is a <strong>Pro-Life</strong> defense rooted in anti-ableism, arguing that selective termination based on genetic diagnoses devalues the lives of people with disabilities."
+      },
+      {
+        id: 10,
+        theme: "Healthcare Reality & Caregiving",
+        stance: "choice", // Pro-Choice
+        text: "Caring for severe genetic disorders can cause immense suffering and <strong>unmanageable <span class=\"vocab-hint\">(難以承受與支應的)</span></strong> financial distress. Without adequate social support, families must have the <strong>autonomy <span class=\"vocab-hint\">(自主決定權)</span></strong> to decide according to their realistic <strong>caregiving capacity <span class=\"vocab-hint\">(長期的照護承擔能力)</span></strong>.",
+        hint: "The focus is on practical caregiving burdens, healthcare costs, and family autonomy in dealing with painful diagnoses.",
+        explanation: "This is a pragmatic <strong>Pro-Choice</strong> argument, holding that the state should not force families into lifelong emotional and economic hardship when they cannot provide specialized care."
+      }
+    ];
+
+    // App State
+    let studentInfo = {
+      seat: '',
+      name: '',
+      attemptCount: 1
+    };
+    let shuffledList = [];
+    let currentIndex = 0;
+    let firstTryCorrectCount = 0;
+    let currentAttempts = 0;
+
+    // Teacher Google Sheet Web App URL (Configurable)
+    const DEFAULT_SHEET_API = "https://script.google.com/macros/s/AKfycbzzx-your-script-id-here/exec";
+    let sheetApiUrl = localStorage.getItem('debate_sheet_api') || '';
+
+    // Initialize Review Cards in Modal
+    function buildReviewModal() {
+      const container = document.getElementById('review-list-container');
+      container.innerHTML = '';
+
+      ARGUMENTS_POOL.forEach((item, index) => {
+        const isChoice = item.stance === 'choice';
+        const card = document.createElement('div');
+        card.className = `p-4 rounded-2xl border-2 ${isChoice ? 'bg-sky-50/70 border-sky-200' : 'bg-rose-50/70 border-rose-200'} space-y-2`;
+        
+        card.innerHTML = `
+          <div class="flex items-center justify-between">
+            <span class="font-bold text-xs ${isChoice ? 'text-sky-800' : 'text-rose-800'} flex items-center gap-1.5">
+              <span>${isChoice ? '🕊️ Pro-Choice (女性選擇權)' : '👶 Pro-Life (胎兒生命權)'}</span>
+              <span class="text-slate-400 font-normal">| 論點 #${index + 1}</span>
+            </span>
+            <span class="px-2 py-0.5 rounded bg-white text-slate-700 font-bold text-[11px] border border-slate-200">
+              ${item.theme}
+            </span>
+          </div>
+          <p class="text-slate-900 leading-relaxed font-medium text-xs sm:text-sm">
+            ${item.text}
+          </p>
+          <div class="bg-white/80 p-2.5 rounded-xl border border-slate-200 text-slate-700 text-xs">
+            <strong class="text-slate-900">核心邏輯解析：</strong> ${item.explanation}
+          </div>
+        `;
+        container.appendChild(card);
+      });
+    }
+
+    // Toggle Review Modal
+    window.toggleReviewModal = function(show) {
+      const modal = document.getElementById('modal-review');
+      if (show) {
+        buildReviewModal();
+        modal.classList.remove('hidden');
+      } else {
+        modal.classList.add('hidden');
+      }
+      if (window.lucide) window.lucide.createIcons();
+    };
+
+    // Teacher Config Modal
+    window.openConfigModal = function() {
+      document.getElementById('sheet-api-url').value = sheetApiUrl;
+      document.getElementById('modal-config').classList.remove('hidden');
+      if (window.lucide) window.lucide.createIcons();
+    };
+
+    window.closeConfigModal = function() {
+      document.getElementById('modal-config').classList.add('hidden');
+    };
+
+    window.saveConfigUrl = function() {
+      const url = document.getElementById('sheet-api-url').value.trim();
+      sheetApiUrl = url;
+      localStorage.setItem('debate_sheet_api', url);
+      closeConfigModal();
+      updateCloudStatus();
+    };
+
+    function updateCloudStatus() {
+      const statusText = document.getElementById('cloud-status-text');
+      if (sheetApiUrl && sheetApiUrl.startsWith('https://script.google.com/')) {
+        statusText.innerHTML = `<i data-lucide="check-circle" class="w-3 h-3 text-emerald-600"></i><span class="text-emerald-700 font-semibold">已成功連線 Google Sheets 後台</span>`;
+      } else {
+        statusText.innerHTML = `<i data-lucide="info" class="w-3 h-3 text-amber-500"></i><span>未設定 Google Sheet 網址 (目前以本機離線記錄，可點右上角齒輪設定)</span>`;
+      }
+      if (window.lucide) window.lucide.createIcons();
+    }
+
+    // Send Status & Results to Google Sheets via POST
+    async function syncToGoogleSheets(status, score = null) {
+      if (!sheetApiUrl || !sheetApiUrl.startsWith('https://script.google.com/')) {
+        return; // No URL set; runs locally without error
+      }
+
+      const payload = {
+        seat: studentInfo.seat,
+        name: studentInfo.name,
+        status: status, // "作答中 (In Progress)" or "已完成 (Completed)"
+        score: score !== null ? `${score} / 10` : "-",
+        accuracy: score !== null ? `${Math.round((score / 10) * 100)}%` : "-",
+        attemptCount: studentInfo.attemptCount,
+        timestamp: new Date().toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' })
+      };
+
+      try {
+        // Send JSON data to Google Apps Script
+        await fetch(sheetApiUrl, {
+          method: 'POST',
+          mode: 'no-cors', // standard for Google Apps Script Web App webhooks
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+      } catch (err) {
+        console.warn("Sheet sync non-blocking error:", err);
       }
     }
 
-    if (rowIndex > 0) {
-      // 如果已存在：更新作答狀態、分數、重複次數與時間
-      sheet.getRange(rowIndex, 3).setValue(status);
-      sheet.getRange(rowIndex, 4).setValue(score);
-      sheet.getRange(rowIndex, 5).setValue(accuracy);
-      sheet.getRange(rowIndex, 6).setValue("第 " + attempts + " 次");
-      sheet.getRange(rowIndex, 7).setValue(timestamp);
-    } else {
-      // 若為第一次作答：新增一筆紀錄
-      sheet.appendRow([seat, name, status, score, accuracy, "第 " + attempts + " 次", timestamp]);
+    // Shuffle Array Helper (Fisher-Yates)
+    function shuffle(array) {
+      const arr = [...array];
+      for (let i = arr.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [arr[i], arr[j]] = [arr[j], arr[i]];
+      }
+      return arr;
     }
 
-    return ContentService.createTextOutput(JSON.stringify({ result: "success" }))
-      .setMimeType(ContentService.MimeType.JSON);
-  } catch (error) {
-    return ContentService.createTextOutput(JSON.stringify({ result: "error", message: error.toString() }))
-      .setMimeType(ContentService.MimeType.JSON);
-  }
-}
+    // Start Quiz
+    window.startQuiz = function() {
+      const seat = document.getElementById('input-seat').value.trim();
+      const name = document.getElementById('input-name').value.trim();
+      const errBox = document.getElementById('login-error-msg');
+
+      if (!seat || !name) {
+        errBox.classList.remove('hidden');
+        return;
+      }
+      errBox.classList.add('hidden');
+
+      // Check if same student is repeating
+      if (studentInfo.seat === seat && studentInfo.name === name) {
+        studentInfo.attemptCount++;
+      } else {
+        studentInfo.seat = seat;
+        studentInfo.name = name;
+        studentInfo.attemptCount = 1;
+      }
+
+      // Display student name in header
+      const badge = document.getElementById('student-display-badge');
+      badge.innerText = `${seat}號 ${name} (第${studentInfo.attemptCount}次)`;
+      badge.classList.remove('hidden');
+
+      // Send "作答中" status to Google Sheets
+      syncToGoogleSheets("作答中 (In Progress)", null);
+
+      // Start questions
+      shuffledList = shuffle(ARGUMENTS_POOL);
+      currentIndex = 0;
+      firstTryCorrectCount = 0;
+      currentAttempts = 0;
+
+      document.getElementById('screen-intro').classList.add('hidden');
+      document.getElementById('screen-completed').classList.add('hidden');
+      document.getElementById('screen-quiz').classList.remove('hidden');
+      document.getElementById('progress-container').classList.remove('hidden');
+      document.getElementById('score-tracker').classList.remove('hidden');
+      document.getElementById('question-badge').classList.remove('hidden');
+
+      renderCurrentQuestion();
+    };
+
+    function renderCurrentQuestion() {
+      currentAttempts = 0;
+      const item = shuffledList[currentIndex];
+
+      // Update counters
+      document.getElementById('question-badge').innerText = `${currentIndex + 1} / ${shuffledList.length}`;
+      document.getElementById('score-tracker').innerText = `Score: ${firstTryCorrectCount} / 10`;
+      const pct = ((currentIndex + 1) / shuffledList.length) * 100;
+      document.getElementById('progress-line').style.width = `${pct}%`;
+
+      // Set question content
+      document.getElementById('topic-tag').innerText = item.theme;
+      document.getElementById('argument-text').innerHTML = item.text;
+
+      // Reset buttons
+      const btnChoice = document.getElementById('btn-choice');
+      const btnLife = document.getElementById('btn-life');
+      
+      btnChoice.disabled = false;
+      btnLife.disabled = false;
+      btnChoice.className = 'p-4 rounded-2xl border-2 border-sky-300 bg-sky-50/70 hover:bg-sky-100 hover:border-sky-500 text-sky-900 font-extrabold text-sm sm:text-base flex flex-col items-center justify-center gap-1 transition-all shadow-2xs active:scale-95';
+      btnLife.className = 'p-4 rounded-2xl border-2 border-rose-300 bg-rose-50/70 hover:bg-rose-100 hover:border-rose-500 text-rose-900 font-extrabold text-sm sm:text-base flex flex-col items-center justify-center gap-1 transition-all shadow-2xs active:scale-95';
+
+      // Hide feedback
+      document.getElementById('feedback-box').classList.add('hidden');
+      document.getElementById('next-action-box').classList.add('hidden');
+
+      if (window.lucide) window.lucide.createIcons();
+    }
+
+    // Handle Answer Selection
+    window.handleSelect = function(selectedStance) {
+      currentAttempts++;
+      const currentItem = shuffledList[currentIndex];
+      const feedbackBox = document.getElementById('feedback-box');
+      const feedbackIcon = document.getElementById('feedback-icon');
+      const feedbackTitle = document.getElementById('feedback-title');
+      const feedbackText = document.getElementById('feedback-text');
+      const nextActionBox = document.getElementById('next-action-box');
+
+      const btnChoice = document.getElementById('btn-choice');
+      const btnLife = document.getElementById('btn-life');
+
+      feedbackBox.classList.remove('hidden');
+
+      if (selectedStance === currentItem.stance) {
+        // CORRECT ANSWER
+        if (currentAttempts === 1) {
+          firstTryCorrectCount++;
+          document.getElementById('score-tracker').innerText = `Score: ${firstTryCorrectCount} / 10`;
+        }
+
+        feedbackBox.className = 'rounded-2xl p-4 text-xs sm:text-sm fade-in bg-emerald-50 border-2 border-emerald-300 text-emerald-950';
+        feedbackIcon.innerText = '✅';
+        feedbackTitle.innerText = currentAttempts === 1 ? 'Correct! (一次答對了！)' : 'Correct on second attempt! (第二次答對了！)';
+        feedbackText.innerHTML = currentItem.explanation;
+
+        // Highlight correct button
+        if (selectedStance === 'choice') {
+          btnChoice.classList.add('ring-4', 'ring-emerald-400', 'bg-emerald-100');
+          btnLife.classList.add('opacity-30');
+        } else {
+          btnLife.classList.add('ring-4', 'ring-emerald-400', 'bg-emerald-100');
+          btnChoice.classList.add('opacity-30');
+        }
+
+        btnChoice.disabled = true;
+        btnLife.disabled = true;
+
+        // Show Next Button
+        nextActionBox.classList.remove('hidden');
+      } else {
+        // INCORRECT ANSWER (HINT + 2ND CHANCE)
+        feedbackBox.className = 'rounded-2xl p-4 text-xs sm:text-sm fade-in bg-amber-50 border-2 border-amber-300 text-amber-950';
+        feedbackIcon.innerText = '🔍';
+        feedbackTitle.innerText = 'Not quite. Here is a clue (提示，請再試一次)：';
+        feedbackText.innerHTML = `${currentItem.hint}<br><span class="inline-block mt-1.5 font-bold text-indigo-700">👉 請依據提示重新閱讀，點選另一選項完成答題！</span>`;
+
+        // Disable only the clicked wrong button
+        if (selectedStance === 'choice') {
+          btnChoice.disabled = true;
+          btnChoice.classList.add('opacity-25', 'cursor-not-allowed', 'line-through');
+        } else {
+          btnLife.disabled = true;
+          btnLife.classList.add('opacity-25', 'cursor-not-allowed', 'line-through');
+        }
+
+        nextActionBox.classList.add('hidden');
+      }
+
+      if (window.lucide) window.lucide.createIcons();
+    };
+
+    // Advance to Next Question or Complete
+    window.nextQuestion = function() {
+      if (currentIndex < shuffledList.length - 1) {
+        currentIndex++;
+        renderCurrentQuestion();
+      } else {
+        // All 10 Completed
+        document.getElementById('screen-quiz').classList.add('hidden');
+        document.getElementById('screen-completed').classList.remove('hidden');
+        document.getElementById('progress-container').classList.add('hidden');
+
+        // Populate completion stats
+        document.getElementById('final-student-name').innerText = `${studentInfo.seat}號 ${studentInfo.name}`;
+        const pct = Math.round((firstTryCorrectCount / shuffledList.length) * 100);
+        document.getElementById('final-accuracy-badge').innerText = `${firstTryCorrectCount} / 10 (${pct}%)`;
+        document.getElementById('final-attempt-count').innerText = `第 ${studentInfo.attemptCount} 次作答`;
+
+        // Send Final "已完成" and Score to Google Sheets
+        syncToGoogleSheets("已完成 (Completed)", firstTryCorrectCount);
+      }
+      if (window.lucide) window.lucide.createIcons();
+    };
+
+    // Repeat challenge with same student
+    window.restartQuizWithSameUser = function() {
+      studentInfo.attemptCount++;
+      const badge = document.getElementById('student-display-badge');
+      badge.innerText = `${studentInfo.seat}號 ${studentInfo.name} (第${studentInfo.attemptCount}次)`;
+
+      // Notify Google Sheets of restart
+      syncToGoogleSheets("作答中 (In Progress)", null);
+
+      shuffledList = shuffle(ARGUMENTS_POOL);
+      currentIndex = 0;
+      firstTryCorrectCount = 0;
+      currentAttempts = 0;
+
+      document.getElementById('screen-completed').classList.add('hidden');
+      document.getElementById('screen-quiz').classList.remove('hidden');
+      document.getElementById('progress-container').classList.remove('hidden');
+
+      renderCurrentQuestion();
+    };
+
+    // Switch student
+    window.logoutUser = function() {
+      document.getElementById('student-display-badge').classList.add('hidden');
+      document.getElementById('score-tracker').classList.add('hidden');
+      document.getElementById('question-badge').classList.add('hidden');
+      document.getElementById('screen-completed').classList.add('hidden');
+      document.getElementById('screen-intro').classList.remove('hidden');
+      document.getElementById('input-seat').value = '';
+      document.getElementById('input-name').value = '';
+      studentInfo = { seat: '', name: '', attemptCount: 1 };
+    };
+
+    // Prevent Right Click (Disable context menu / Auto Translate popover)
+    document.addEventListener('contextmenu', function(e) {
+      e.preventDefault();
+      return false;
+    });
+
+    // Disable common translate / inspect keyboard shortcuts
+    document.addEventListener('keydown', function(e) {
+      if (e.key === 'F12' || (e.ctrlKey && (e.key === 'u' || e.key === 'U' || e.key === 's' || e.key === 'S'))) {
+        e.preventDefault();
+      }
+    });
+
+    window.onload = function() {
+      updateCloudStatus();
+      if (window.lucide) window.lucide.createIcons();
+    };
+  </script>
+</body>
+</html>
